@@ -760,11 +760,31 @@ public class WifiWizard2 extends CordovaPlugin {
       int networkIdToConnect = (Integer) params[1];
 
       final int TIMES_TO_RETRY = 15;
+      List<NetworkInfo.DetailedState> states = new ArrayList<>();
       for (int i = 0; i < TIMES_TO_RETRY; i++) {
 
         WifiInfo info = wifiManager.getConnectionInfo();
         NetworkInfo.DetailedState connectionState = info
             .getDetailedStateOf(info.getSupplicantState());
+        states.add(connectionState);
+
+        if(connectionState == NetworkInfo.DetailedState.DISCONNECTED ||
+        connectionState == NetworkInfo.DetailedState.IDLE ||
+        connectionState == NetworkInfo.DetailedState.SCANNING)
+        {
+          if(Collections.frequency(states, NetworkInfo.DetailedState.DISCONNECTED) > 4 ||
+          Collections.frequency(states, NetworkInfo.DetailedState.IDLE) > 4 ||
+          Collections.frequency(states, NetworkInfo.DetailedState.SCANNING) > 4)
+          {
+            break;
+          }
+        } else if (connectionState == NetworkInfo.DetailedState.CONNECTING ||
+          connectionState == NetworkInfo.DetailedState.CONNECTED ||
+          (connectionState == NetworkInfo.DetailedState.OBTAINING_IPADDR && i > 4))
+        {
+          if(info.getNetworkId() != networkIdToConnect)
+            break;
+        }
 
         boolean isConnected =
             // need to ensure we're on correct network because sometimes this code is
