@@ -161,8 +161,11 @@ var WifiWizard2 = {
             WifiWizard2.add(wifiConfig).then(function (newNetID) {
 
                 // Successfully updated or added wifiConfig
-                cordova.exec(resolve, reject, "WifiWizard2", "connect", [WifiWizard2.formatWifiString(SSID), bindAll]);
-
+                if(device.platform === "Android" && !(parseInt(device.version.split('.')[0]) >= 10)) {
+					cordova.exec(resolve, reject, "WifiWizard2", "connect", [WifiWizard2.formatWifiString(SSID), bindAll]);
+				} else {
+                    resolve(newNetID);
+                }
                 // Catch error adding/updating network
             }).catch(function (error) {
 
@@ -172,7 +175,9 @@ var WifiWizard2 = {
 
                     // This error above should only be returned when the add method was able to pull a network ID (as it tries to update instead of adding)
                     // Lets go ahead and attempt to connect to that SSID (using the existing wifi configuration)
-                    cordova.exec(resolve, reject, "WifiWizard2", "connect", [WifiWizard2.formatWifiString(SSID), bindAll]);
+                    if(device.platform === "Android" && !(parseInt(device.version.split('.')[0]) >= 10)) {
+						cordova.exec(resolve, reject, "WifiWizard2", "connect", [WifiWizard2.formatWifiString(SSID), bindAll]);
+					}
 
                 } else {
 
@@ -616,12 +621,17 @@ var WifiWizard2 = {
         }
         ssid = ssid.trim();
 
-        if (ssid.charAt(0) != '"') {
-            ssid = '"' + ssid;
-        }
+        if(device.platform === "Android" && parseInt(device.version.split('.')[0]) >= 10){
+            // Do not add "" To the SSID, as the new method for Android Q does not support it
+        } 
+        else {
+            if (ssid.charAt(0) != '"') {
+                ssid = '"' + ssid;
+            }
 
-        if (ssid.charAt(ssid.length - 1) != '"') {
-            ssid = ssid + '"';
+            if (ssid.charAt(ssid.length - 1) != '"') {
+                ssid = ssid + '"';
+            }
         }
 
         return ssid;
