@@ -467,6 +467,12 @@ public class WifiWizard2 extends CordovaPlugin {
       }
 
       if(API_VERSION >= 29) {
+
+        try {
+          // Same behavior as releaseNetworkRequest
+          connectivityManager.unregisterNetworkCallback(networkCallback); // Added in API 21
+        } catch (Exception e) {}
+
         this.networkCallback = new ConnectivityManager.NetworkCallback() {
           @Override
           public void onAvailable(Network network) {
@@ -1878,6 +1884,11 @@ public class WifiWizard2 extends CordovaPlugin {
           .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
           .build();
 
+      try {
+        // Same behavior as releaseNetworkRequest
+        connectivityManager.unregisterNetworkCallback(networkCallback); // Added in API 21
+      } catch (Exception e) {}
+
       networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(Network network) {
@@ -1888,11 +1899,6 @@ public class WifiWizard2 extends CordovaPlugin {
           }
         }
       };
-
-      try {
-        // Same behavior as releaseNetworkRequest
-        connectivityManager.unregisterNetworkCallback(networkCallback); // Added in API 21
-      } catch (Exception e) {}
 
       connectivityManager.requestNetwork(request, networkCallback);
 
