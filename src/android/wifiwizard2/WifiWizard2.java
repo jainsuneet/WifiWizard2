@@ -380,10 +380,11 @@ public class WifiWizard2 extends CordovaPlugin {
       // 1: authentication algorithm,
       // 2: authentication information
       // 3: whether or not the SSID is hidden
-      String newSSID = data.getString(0);
-      String authType = data.getString(1);
-      String newPass = data.getString(2);
-      boolean isHiddenSSID = data.getBoolean(3);
+      String newSSID = data.getJSONArray(0).getString(0);
+      String authType = data.getJSONArray(0).getString(1);
+      String newPass = data.getJSONArray(0).getString(2);
+      boolean isHiddenSSID = data.getJSONArray(0).getBoolean(3);
+      boolean withPattern = data.getBoolean(1);
 
       wifi.hiddenSSID = isHiddenSSID;
 
@@ -489,7 +490,10 @@ public class WifiWizard2 extends CordovaPlugin {
         };
 
         WifiNetworkSpecifier.Builder builder = new WifiNetworkSpecifier.Builder();
-        builder.setSsid(newSSID);
+        if (withPattern)
+          builder.setSsidPattern(new PatternMatcher(newSSID, PatternMatcher.PATTERN_SIMPLE_GLOB));
+        else
+          builder.setSsid(newSSID);
         builder.setWpa2Passphrase(newPass);
 
         WifiNetworkSpecifier wifiNetworkSpecifier = builder.build();
@@ -503,7 +507,10 @@ public class WifiWizard2 extends CordovaPlugin {
         NetworkRequest nr = networkRequestBuilder1.build();
         ConnectivityManager cm = (ConnectivityManager) cordova.getActivity().getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE);
         //timeout add because "No devices found" wasn't handled correct and doesn't throw Unavailable
-        cm.requestNetwork(nr, this.networkCallback, 15000);
+        if (withPattern)
+          cm.requestNetwork(nr, this.networkCallback);
+        else
+          cm.requestNetwork(nr, this.networkCallback, 15000);
       } else {
         // After processing authentication types, add or update network
         if(wifi.networkId == -1) { // -1 means SSID configuration does not exist yet

@@ -67,7 +67,7 @@ var WifiWizard2 = {
      * @param wifi  Must be object created by formatWifiConfig()
      * @returns {Promise<any>}
      */
-    add: function (wifi) {
+    add: function (wifi, withPattern = false) {
 
         return new Promise(function (resolve, reject) {
 
@@ -111,7 +111,7 @@ var WifiWizard2 = {
                 }
 
                 networkInformation.push(!!wifi.isHiddenSSID)
-                cordova.exec(resolve, reject, "WifiWizard2", "add", networkInformation);
+                cordova.exec(resolve, reject, "WifiWizard2", "add", [networkInformation, withPattern]);
 
             } else {
                 reject("Invalid parameter. Wifi not an object.");
@@ -142,7 +142,7 @@ var WifiWizard2 = {
      * @param {string} [algorithm=NONE]            WPA, WPA (for WPA2), WEP or NONE (NONE by default)
      * @returns {Promise<any>}
      */
-    connect: function (SSID, bindAll, password, algorithm, isHiddenSSID) {
+    connect: function (SSID, bindAll, password, algorithm, isHiddenSSID, withPattern) {
         return new Promise(function (resolve, reject) {
 
             if (!SSID) {
@@ -158,7 +158,7 @@ var WifiWizard2 = {
                 return;
             }
 
-            WifiWizard2.add(wifiConfig).then(function (newNetID) {
+            WifiWizard2.add(wifiConfig, withPattern).then(function (newNetID) {
 
                 // Successfully updated or added wifiConfig
                 if(device.platform === "Android" && !(parseInt(device.version.split('.')[0]) >= 10)) {
