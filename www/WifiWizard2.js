@@ -21,7 +21,7 @@ var WifiWizard2 = {
 	 * @param ssidPassword      Password if connecting to WPA/WPA2 network (omit or use false to connect to open network)
 	 * @returns {Promise}
 	 */
-	iOSConnectNetwork: function (ssid, ssidPassword) {
+	iOSConnectNetwork: function (ssid, ssidPassword, justOnce) {
 
         return new Promise(function (resolve, reject) {
             if( ssidPassword === undefined || ! ssidPassword || ssidPassword.length < 1 ){
@@ -37,7 +37,8 @@ var WifiWizard2 = {
               cordova.exec(resolve, reject, "WifiWizard2", "iOSConnectNetwork", [
                 {
                   "Ssid": ssid,
-                  "Password": ssidPassword
+                  "Password": ssidPassword,
+                  "JustOnce": `${justOnce ? 'YES' : 'NO'}`
                 }]
               );
             }
