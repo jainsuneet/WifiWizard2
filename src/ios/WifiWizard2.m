@@ -2,21 +2,32 @@
 #include <ifaddrs.h>
 #import <net/if.h>
 #import <SystemConfiguration/CaptiveNetwork.h>
-#import <NetworkExtension/NetworkExtension.h>  
+#import <NetworkExtension/NetworkExtension.h>
 
 @implementation WifiWizard2
 
 - (id)fetchSSIDInfo {
-    // see http://stackoverflow.com/a/5198968/907720
-    NSArray *ifs = (__bridge_transfer NSArray *)CNCopySupportedInterfaces();
-    NSLog(@"Supported interfaces: %@", ifs);
-    NSDictionary *info;
-    for (NSString *ifnam in ifs) {
-        info = (__bridge_transfer NSDictionary *)CNCopyCurrentNetworkInfo((__bridge CFStringRef)ifnam);
-        NSLog(@"%@ => %@", ifnam, info);
-        if (info && [info count]) { break; }
+    // For iOS 14+, use NEHotspotNetwork.fetchCurrent instead of deprecated CNCopyCurrentNetworkInfo
+    NSLog(@"[WifiWizard2] fetchSSIDInfo called");
+
+    if (@available(iOS 14.0, *)) {
+        NSLog(@"[WifiWizard2] iOS 14+ detected - returning nil to avoid deprecated API");
+        // NEHotspotNetwork.fetchCurrent is the modern API but requires entitlements and location permission
+        // Return nil to indicate we should not rely on this for verification on iOS 14+
+        return nil;
+    } else {
+        NSLog(@"[WifiWizard2] iOS 11-13 detected - using legacy CNCopyCurrentNetworkInfo");
+        // iOS 11-13: Still use the old method
+        NSArray *ifs = (__bridge_transfer NSArray *)CNCopySupportedInterfaces();
+        NSLog(@"Supported interfaces: %@", ifs);
+        NSDictionary *info;
+        for (NSString *ifnam in ifs) {
+            info = (__bridge_transfer NSDictionary *)CNCopyCurrentNetworkInfo((__bridge CFStringRef)ifnam);
+            NSLog(@"%@ => %@", ifnam, info);
+            if (info && [info count]) { break; }
+        }
+        return info;
     }
-    return info;
 }
 
 - (BOOL) isWiFiEnabled {
@@ -38,7 +49,7 @@
 }
 
 - (void)iOSConnectNetwork:(CDVInvokedUrlCommand*)command {
-    
+
     __block CDVPluginResult *pluginResult = nil;
 
 	NSString * ssidString;
@@ -51,26 +62,47 @@
 
 	if (@available(iOS 11.0, *)) {
 	    if (ssidString && [ssidString length]) {
+            NSLog(@"[WifiWizard2] iOSConnectNetwork - Attempting to connect to SSID: %@", ssidString);
+
 			NEHotspotConfiguration *configuration = [[NEHotspotConfiguration
-				alloc] initWithSSID:ssidString 
-					passphrase:passwordString 
+				alloc] initWithSSID:ssidString
+					passphrase:passwordString
 						isWEP:(BOOL)false];
 
 			configuration.joinOnce = false;
-            
+
             [[NEHotspotConfigurationManager sharedManager] applyConfiguration:configuration completionHandler:^(NSError * _Nullable error) {
-                
-                NSDictionary *r = [self fetchSSIDInfo];
-                
-                NSString *ssid = [r objectForKey:(id)kCNNetworkInfoKeySSID]; //@"SSID"
-                
-                if ([ssid isEqualToString:ssidString]){
-                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
-                }else{
+
+                if (error) {
+                    // Connection failed
+                    NSLog(@"[WifiWizard2] iOSConnectNetwork - Connection FAILED with error: %@", error.description);
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                    return;
                 }
-                [self.commandDelegate sendPluginResult:pluginResult
-                                            callbackId:command.callbackId];
+
+                // iOS 14+: Trust NEHotspotConfigurationManager result
+                // CNCopyCurrentNetworkInfo is deprecated and unreliable, requires location permission
+                if (@available(iOS 14.0, *)) {
+                    // On iOS 14+, if no error was returned, connection is successful
+                    NSLog(@"[WifiWizard2] iOSConnectNetwork - iOS 14+ SUCCESS (trusting NEHotspotConfigurationManager)");
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                } else {
+                    // iOS 11-13: Verify using the old method
+                    NSLog(@"[WifiWizard2] iOSConnectNetwork - iOS 11-13: Verifying connection with legacy method");
+                    NSDictionary *r = [self fetchSSIDInfo];
+                    NSString *ssid = [r objectForKey:(id)kCNNetworkInfoKeySSID];
+
+                    if ([ssid isEqualToString:ssidString]){
+                        NSLog(@"[WifiWizard2] iOSConnectNetwork - iOS 11-13 SUCCESS (verified: %@)", ssid);
+                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
+                    } else {
+                        NSLog(@"[WifiWizard2] iOSConnectNetwork - iOS 11-13 FAILED (expected: %@, got: %@)", ssidString, ssid);
+                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Connection verification failed"];
+                    }
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                }
             }];
 
 
@@ -100,6 +132,8 @@
 
     if (@available(iOS 11.0, *)) {
         if (ssidString && [ssidString length]) {
+            NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - Attempting to connect to open network SSID: %@", ssidString);
+
             NEHotspotConfiguration *configuration = [[NEHotspotConfiguration
                     alloc] initWithSSID:ssidString];
 
@@ -107,17 +141,36 @@
 
             [[NEHotspotConfigurationManager sharedManager] applyConfiguration:configuration completionHandler:^(NSError * _Nullable error) {
 
-                NSDictionary *r = [self fetchSSIDInfo];
-
-                NSString *ssid = [r objectForKey:(id)kCNNetworkInfoKeySSID]; //@"SSID"
-
-                if ([ssid isEqualToString:ssidString]){
-                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
-                }else{
+                if (error) {
+                    // Connection failed
+                    NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - Connection FAILED with error: %@", error.description);
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                    return;
                 }
-                [self.commandDelegate sendPluginResult:pluginResult
-                                            callbackId:command.callbackId];
+
+                // iOS 14+: Trust NEHotspotConfigurationManager result
+                // CNCopyCurrentNetworkInfo is deprecated and unreliable, requires location permission
+                if (@available(iOS 14.0, *)) {
+                    // On iOS 14+, if no error was returned, connection is successful
+                    NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - iOS 14+ SUCCESS (trusting NEHotspotConfigurationManager)");
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                } else {
+                    // iOS 11-13: Verify using the old method
+                    NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - iOS 11-13: Verifying connection with legacy method");
+                    NSDictionary *r = [self fetchSSIDInfo];
+                    NSString *ssid = [r objectForKey:(id)kCNNetworkInfoKeySSID];
+
+                    if ([ssid isEqualToString:ssidString]){
+                        NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - iOS 11-13 SUCCESS (verified: %@)", ssid);
+                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
+                    } else {
+                        NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - iOS 11-13 FAILED (expected: %@, got: %@)", ssidString, ssid);
+                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Connection verification failed"];
+                    }
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                }
             }];
 
 
@@ -161,34 +214,70 @@
 
 - (void)getConnectedSSID:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    NSDictionary *r = [self fetchSSIDInfo];
+    NSLog(@"[WifiWizard2] getConnectedSSID called");
 
-    NSString *ssid = [r objectForKey:(id)kCNNetworkInfoKeySSID]; //@"SSID"
-
-    if (ssid && [ssid length]) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssid];
+    if (@available(iOS 14.0, *)) {
+        // iOS 14+: Use NEHotspotNetwork.fetchCurrent
+        NSLog(@"[WifiWizard2] getConnectedSSID - Using iOS 14+ NEHotspotNetwork.fetchCurrent API");
+        [NEHotspotNetwork fetchCurrentWithCompletionHandler:^(NEHotspotNetwork * _Nullable currentNetwork) {
+            if (currentNetwork && currentNetwork.SSID) {
+                NSLog(@"[WifiWizard2] getConnectedSSID - iOS 14+ SUCCESS: %@", currentNetwork.SSID);
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:currentNetwork.SSID];
+            } else {
+                NSLog(@"[WifiWizard2] getConnectedSSID - iOS 14+ FAILED: currentNetwork is nil or no SSID");
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not available"];
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not available"];
-    }
+        // iOS 11-13: Use legacy method
+        NSLog(@"[WifiWizard2] getConnectedSSID - Using iOS 11-13 legacy CNCopyCurrentNetworkInfo");
+        NSDictionary *r = [self fetchSSIDInfo];
+        NSString *ssid = [r objectForKey:(id)kCNNetworkInfoKeySSID];
 
-    [self.commandDelegate sendPluginResult:pluginResult
-                                callbackId:command.callbackId];
+        if (ssid && [ssid length]) {
+            NSLog(@"[WifiWizard2] getConnectedSSID - iOS 11-13 SUCCESS: %@", ssid);
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssid];
+        } else {
+            NSLog(@"[WifiWizard2] getConnectedSSID - iOS 11-13 FAILED: No SSID available");
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not available"];
+        }
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }
 }
 
 - (void)getConnectedBSSID:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    NSDictionary *r = [self fetchSSIDInfo];
-    
-    NSString *bssid = [r objectForKey:(id)kCNNetworkInfoKeyBSSID]; //@"SSID"
-    
-    if (bssid && [bssid length]) {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:bssid];
+    NSLog(@"[WifiWizard2] getConnectedBSSID called");
+
+    if (@available(iOS 14.0, *)) {
+        // iOS 14+: Use NEHotspotNetwork.fetchCurrent
+        NSLog(@"[WifiWizard2] getConnectedBSSID - Using iOS 14+ NEHotspotNetwork.fetchCurrent API");
+        [NEHotspotNetwork fetchCurrentWithCompletionHandler:^(NEHotspotNetwork * _Nullable currentNetwork) {
+            if (currentNetwork && currentNetwork.BSSID) {
+                NSLog(@"[WifiWizard2] getConnectedBSSID - iOS 14+ SUCCESS: %@", currentNetwork.BSSID);
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:currentNetwork.BSSID];
+            } else {
+                NSLog(@"[WifiWizard2] getConnectedBSSID - iOS 14+ FAILED: currentNetwork is nil or no BSSID");
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not available"];
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
     } else {
-        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not available"];
+        // iOS 11-13: Use legacy method
+        NSLog(@"[WifiWizard2] getConnectedBSSID - Using iOS 11-13 legacy CNCopyCurrentNetworkInfo");
+        NSDictionary *r = [self fetchSSIDInfo];
+        NSString *bssid = [r objectForKey:(id)kCNNetworkInfoKeyBSSID];
+
+        if (bssid && [bssid length]) {
+            NSLog(@"[WifiWizard2] getConnectedBSSID - iOS 11-13 SUCCESS: %@", bssid);
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:bssid];
+        } else {
+            NSLog(@"[WifiWizard2] getConnectedBSSID - iOS 11-13 FAILED: No BSSID available");
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not available"];
+        }
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
     }
-    
-    [self.commandDelegate sendPluginResult:pluginResult
-                                callbackId:command.callbackId];
 }
 
 - (void)isWifiEnabled:(CDVInvokedUrlCommand*)command {
@@ -223,54 +312,54 @@
 
 - (void)addNetwork:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)removeNetwork:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)androidConnectNetwork:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)androidDisconnectNetwork:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)listNetworks:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)getScanResults:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
@@ -286,45 +375,45 @@
 
 - (void)disconnect:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)isConnectedToInternet:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)canConnectToInternet:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)canPingWifiRouter:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
 
 - (void)canConnectToRouter:(CDVInvokedUrlCommand*)command {
     CDVPluginResult *pluginResult = nil;
-    
+
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"Not supported"];
-    
+
     [self.commandDelegate sendPluginResult:pluginResult
                                 callbackId:command.callbackId];
 }
