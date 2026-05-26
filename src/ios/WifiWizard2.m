@@ -213,7 +213,7 @@
 }
 
 - (void)getConnectedSSID:(CDVInvokedUrlCommand*)command {
-    CDVPluginResult *pluginResult = nil;
+    __block CDVPluginResult *pluginResult = nil;
     NSLog(@"[WifiWizard2] getConnectedSSID called");
 
     if (@available(iOS 14.0, *)) {
@@ -247,7 +247,7 @@
 }
 
 - (void)getConnectedBSSID:(CDVInvokedUrlCommand*)command {
-    CDVPluginResult *pluginResult = nil;
+    __block CDVPluginResult *pluginResult = nil;
     NSLog(@"[WifiWizard2] getConnectedBSSID called");
 
     if (@available(iOS 14.0, *)) {
