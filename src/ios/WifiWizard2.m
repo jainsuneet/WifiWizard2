@@ -74,7 +74,15 @@
             [[NEHotspotConfigurationManager sharedManager] applyConfiguration:configuration completionHandler:^(NSError * _Nullable error) {
 
                 if (error) {
-                    // Connection failed
+                    // Check if error code is 13 (NEHotspotConfigurationErrorAlreadyAssociated)
+                    // This means we're already connected to this network - treat as success
+                    if (error.code == 13) {
+                        NSLog(@"[WifiWizard2] iOSConnectNetwork - Already connected to SSID: %@", ssidString);
+                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
+                        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                        return;
+                    }
+                    // Connection failed with other error
                     NSLog(@"[WifiWizard2] iOSConnectNetwork - Connection FAILED with error: %@", error.description);
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -142,7 +150,15 @@
             [[NEHotspotConfigurationManager sharedManager] applyConfiguration:configuration completionHandler:^(NSError * _Nullable error) {
 
                 if (error) {
-                    // Connection failed
+                    // Check if error code is 13 (NEHotspotConfigurationErrorAlreadyAssociated)
+                    // This means we're already connected to this network - treat as success
+                    if (error.code == 13) {
+                        NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - Already connected to SSID: %@", ssidString);
+                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:ssidString];
+                        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                        return;
+                    }
+                    // Connection failed with other error
                     NSLog(@"[WifiWizard2] iOSConnectOpenNetwork - Connection FAILED with error: %@", error.description);
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.description];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
